@@ -94,3 +94,45 @@ def test_reject_non_https_and_nonfinite():
             pass
         else:
             raise AssertionError(value)
+
+
+def test_jev_counter_deduplicates_and_rejects_invalid():
+    with tempfile.TemporaryDirectory() as d:
+        monitor = core.Monitor(d)
+        item = dict(provider="jev", request_id="test1", model="jev-test", input_tokens=321, output_tokens=31)
+        assert monitor.record_usage(item)["requests"] == 1
+        assert monitor.record_usage(item)["requests"] == 1
+        assert monitor.snapshot()["reported_usage"]["input_tokens"] == 321
+        monitor.configure({"source": "jev"})
+        assert monitor.refresh()["selected"] is None
+        assert monitor.snapshot()["estimated_tokens"] is None
+        item["input_tokens"] = -1
+        try:
+            monitor.record_usage(item)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError("invalid usage accepted")
+        assert core.Monitor(d).snapshot()["reported_usage"]["requests"] == 1
+
+
+def test_codex_quota_missing_is_not_zero():
+    quota = load("codex_quota")
+    result = quota.normalize(
+        {
+            "rateLimitsByLimitId": {
+                "codex": {
+                    "primary": {"usedPercent": 22, "windowDurationMins": 10080, "resetsAt": 1790724867},
+                    "secondary": None,
+                }
+            }
+        }
+    )
+    assert result["windows"][0]["remaining"] == 78
+    assert len(result["windows"]) == 1
+    try:
+        quota.normalize({"rateLimitsByLimitId": {"codex": {"primary": None}}})
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("Unavailable quota became zero")

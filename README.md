@@ -8,13 +8,23 @@
 
 | 方式 | 含义 | 所需设置 |
 | --- | --- | --- |
+| Codex 当前登录账号 | 套餐剩余百分比与重置时间 | 本机安装并登录 Codex CLI / app-server |
 | DeepSeek | 官方账户余额 | API Key |
 | OpenAI / GPT | 自定预算减组织已用费用，非平台余额 | Admin API Key、USD 预算与起始日期 |
 | Anthropic / Claude | 自定预算减组织已用费用，非平台余额；不含 Priority Tier | 有组织费用查询权限的密钥、USD 预算与起始日期 |
 | 自定义服务商 | 用户指定 HTTPS GET 接口返回的余额 | 地址、Bearer 密钥、JSON 金额字段路径 |
+| JEV | 本机桥接上报的输入/输出 token；无账户余额 | 连接本机 JEV 用量上报桥接 |
 | 任意模型 | 手动预算，不自动扣减 | 金额、币种、模型备注 |
 
 模型名称仅作备注；组织费用包含全部模型，不能当作单模型用量。ChatGPT/Claude 订阅额度、API 账户余额和上下文剩余量不是同一项。可用 token 仅按用户填写的综合单价估算，不代表平台承诺。
+
+## v0.7.2 新功能
+
+现在可在查询方式中选择 Codex 当前账号额度或 JEV 本机请求用量。Codex 默认每 5 分钟自动查询，无需在插件填写密钥；JEV 需要本机桥接主动上报，不会自动捕获任意客户端流量。详情见 [更新日志](CHANGELOG.md)。
+
+### JEV 桥接协议
+
+本机客户端先 GET `http://127.0.0.1:48923/api/status` 取得 `csrf`，随后使用 `X-Neko-CSRF` 请求头向 `/api/usage` POST JSON：`{"provider":"jev","request_id":"每次真实请求的唯一ID","model":"jev-latest","input_tokens":100,"output_tokens":20}`。示例数值不是实际用量。仅对成功、未缓存的真实调用上报；不要发送密钥、提示词或回答。插件离线时本版本不自动回补。
 
 ## 互动与记录
 

@@ -90,6 +90,8 @@ def start_server(monitor, port=48923, request_reply=None, agent_status=None, rec
                     return self.send(
                         200, recording.action(body.get("action", "status")) if recording else {"active": False}
                     )
+                if self.path == "/api/usage":
+                    return self.send(200, monitor.record_usage(body))
                 if self.path == "/api/config":
                     monitor.configure(body)
                     return self.send(200, monitor.refresh())

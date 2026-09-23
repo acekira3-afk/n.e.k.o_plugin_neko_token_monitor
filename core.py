@@ -11,7 +11,9 @@ import urllib.request
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
+from .codex_quota import read_quota
 from .providers import query, validate_endpoint
+from .usage import add_usage
 
 
 class NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -103,7 +105,7 @@ class Monitor:
         with self.lock:
             cfg = dict(self.config)
             source = values.get("source", cfg["source"])
-            if source not in ("deepseek", "openai", "anthropic", "custom", "manual"):
+            if source not in ("deepseek", "openai", "anthropic", "custom", "manual", "jev", "codex"):
                 raise ValueError("查询方式无效")
             # Never reuse a previous provider's secret at a new destination.
             if source != cfg["source"] or values.get("endpoint", cfg["endpoint"]) != cfg["endpoint"]:
@@ -162,6 +164,12 @@ class Monitor:
                 self.write("state.json", {})
         return self.snapshot()
 
+    def record_usage(self, item):
+        with self.lock:
+            data = add_usage(self.read("usage-jev.json", {}), item)
+            self.write("usage-jev.json", data)
+            return {k: v for k, v in data.items() if k != "seen"}
+
     def snapshot(self):
         with self.lock:
             cfg = {k: v for k, v in self.config.items() if k != "api_key"}
@@ -174,10 +182,13 @@ class Monitor:
                 estimate = int(
                     max(Decimal(row["balance"]), Decimal(0)) * 1000000 / Decimal(str(cfg["price_per_million"]))
                 )
+            usage = {k: v for k, v in self.read("usage-jev.json", {}).items() if k != "seen"}
             return {
+                "codex_quota": self.state.get("codex_quota"),
+                "reported_usage": usage,
                 "config": cfg,
                 "basis": self.state.get("basis", "官方账户余额"),
-                "configured": self.config["source"] == "manual" or bool(self.config["api_key"]),
+                "configured": self.config["source"] in ("manual", "jev", "codex") or bool(self.config["api_key"]),
                 "balances": self.state.get("balances", []),
                 "selected": row,
                 "updated_at": updated,
@@ -194,6 +205,24 @@ class Monitor:
     def refresh(self):
         # Serialize refreshes and key changes; never send a stale key's results to a new account.
         with self.lock:
+            if self.config["source"] == "codex":
+                if self.last_attempt and time.monotonic() - self.last_attempt < 60:
+                    return self.snapshot()
+                self.last_attempt = time.monotonic()
+                try:
+                    quota = read_quota()
+                    self.state = {
+                        "codex_quota": quota,
+                        "updated_at": time.time(),
+                        "error": None,
+                        "basis": "Codex 套餐额度",
+                    }
+                    self.write("state.json", self.state)
+                except Exception as exc:
+                    self.state["error"] = str(exc) if isinstance(exc, ValueError) else "Codex 额度查询失败"
+                return self.snapshot()
+            if self.config["source"] == "jev":
+                return self.snapshot()
             if not self.config["api_key"] and self.config["source"] != "manual":
                 return self.snapshot()
             if self.last_attempt and time.monotonic() - self.last_attempt < 60:
