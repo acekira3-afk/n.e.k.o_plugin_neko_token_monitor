@@ -50,8 +50,7 @@ async function requestSpokenLine(line){if(!csrf)return;try{const r=await fetch('
 let recordingActive=false, recordingState=null, recordQueue=Promise.resolve(), exiting=false;
 function renderRecording(d){
  recordingState=d;recordingActive=!!d.active;
- el('recordMode').textContent=recordingActive?'退出记录模式':'开始记录模式';
- el('exitRecord').textContent=recordingActive?'退出模式 · 恢复 NEKO':'开始记录模式';
+ el('exitRecord').textContent=recordingActive?'和猫娘一起玩':'开始记录模式';
  el('recordCounts').textContent=d.error||`本次摸头 ${d.pet||0} · 询问 ${d.ask||0} ｜累计摸头 ${d.totals?.pet||0} · 询问 ${d.totals?.ask||0}`;
  el('historyTotals').textContent=`共 ${d.totals?.sessions||0} 段记录，摸头 ${d.totals?.pet||0} 次，询问 ${d.totals?.ask||0} 次喵～`;
  el('memoryStatus').textContent=d.pending_memory?`${d.pending_memory} 段已保存在本机，等待写入 YUI 记忆；后台会重试喵～`:'已完成记录的记忆写入均已确认喵～';
@@ -95,8 +94,7 @@ async function startRecording(){
  nativeTimer=setTimeout(()=>window.catfoodNativeState({active:true,ok:false}),3000);
  }catch(e){say(e.message);}
 }
-el('recordMode').onclick=()=>{el('menu').hidden=true;return recordingActive?finishRecording():startRecording();};
-el('exitRecord').onclick=()=>recordingActive?finishRecording():startRecording();
+el('exitRecord').onclick=()=>{el('menu').hidden=true;return recordingActive?finishRecording():startRecording();};
 el('historyToggle').onclick=()=>{el('historyPanel').hidden=false;recordAction('status').catch(()=>{});};el('closeHistory').onclick=()=>el('historyPanel').hidden=true;
 async function retryMemory(){const d=await recordAction('retry');if(d)say(d.pending_memory?'互动已保存，正在重试记忆同步喵～':'已写入 YUI 的记忆喵～');}
 el('retryMemory').onclick=()=>{el('menu').hidden=true;retryMemory().catch(()=>{});};el('historyRetry').onclick=()=>retryMemory().catch(()=>{});

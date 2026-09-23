@@ -3,7 +3,7 @@ id = "neko_token_monitor"
 name = "猫粮"
 description = "启动即显示透明桌面猫娘和余额思考气泡：点击吐槽、摸头、拖动、低余额提醒；支持 Codex 套餐额度、JEV 本机用量、DeepSeek 余额、GPT/Claude 费用预算、自定义接口和手动预算；窗口内设置账户，macOS 与 Windows 桌面挂件。"
 short_description = "YUI companion with configurable balance sources and explicitly estimated budgets."
-version = "0.8.1"
+version = "0.8.2"
 entry = "plugin.plugins.neko_token_monitor:NekoTokenMonitorPlugin"
 
 [plugin.author]
