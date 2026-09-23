@@ -88,7 +88,10 @@ def start_server(monitor, port=48923, request_reply=None, agent_status=None, rec
                     raise ValueError()
                 if self.path == "/api/recording":
                     return self.send(
-                        200, recording.action(body.get("action", "status")) if recording else {"active": False}
+                        200,
+                        recording.action(body.get("action", "status"), body.get("event_id"), body.get("session_id"))
+                        if recording
+                        else {"active": False},
                     )
                 if self.path == "/api/usage":
                     return self.send(200, monitor.record_usage(body))

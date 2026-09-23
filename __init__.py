@@ -87,6 +87,7 @@ class NekoTokenMonitorPlugin(NekoPluginBase):
             monitor = Fleet(self.data_path("balance-monitor"), announce=self.announce)
             self.logger.info("Budget widget: storage ready")
             self.recording = Recording(self.data_path("recording"))
+            self.recording.start()
             server, thread = start_server(
                 monitor, request_reply=self.request_reply, agent_status=AgentStatus(), recording=self.recording
             )
@@ -118,6 +119,8 @@ class NekoTokenMonitorPlugin(NekoPluginBase):
                 self.widget.kill()
                 await asyncio.to_thread(self.widget.wait)
         self.widget = None
+        if self.recording:
+            await asyncio.to_thread(self.recording.close)
         if self.server:
             await asyncio.to_thread(self.server.shutdown)
             self.server.server_close()

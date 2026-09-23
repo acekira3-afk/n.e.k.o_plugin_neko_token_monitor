@@ -36,7 +36,7 @@ function pet(){recordAction("pet");bounce('character');bounce('thought');const l
 let drag=false,start=null;el('character').onpointerdown=e=>{clickAnimations.get(el('character'))?.cancel();start={x:e.screenX,y:e.screenY};drag=false;el('character').setPointerCapture(e.pointerId);native('dragStart');};el('character').onpointermove=e=>{if(!start)return;if(Math.hypot(e.screenX-start.x,e.screenY-start.y)>4)drag=true;if(drag)native('dragMove');};el('character').onpointerup=()=>{native('dragEnd');start=null;if(drag)return;pet();};el('character').onpointercancel=()=>{start=null;native('dragEnd');};
 el('menuToggle').onclick=()=>el('menu').hidden=!el('menu').hidden;
 for(const [id,value] of [['balanceMode','balance'],['tokenMode','token']])el(id).onclick=()=>{mode=value;idleCard=false;localStorage.setItem('neko-budget-mode',mode);el('menu').hidden=true;restore();};
-el('settings').onclick=()=>{el('menu').hidden=true;openAccount();};el('hide').onclick=async()=>{el('menu').hidden=true;if(recordingActive){await finishRecording();return;}if(!native('hide'))say('关闭窗口就能收起我喵～');};
+el('settings').onclick=()=>{el('menu').hidden=true;openAccount();};el('hide').onclick=async()=>{el('menu').hidden=true;if(recordingActive){await finishRecording();}if(!native('hide'))say('关闭窗口就能收起我喵～');};
 async function update(refresh=false){try{const r=await fetch(refresh?'/api/refresh':'/api/status',refresh?{method:'POST',headers:{'Content-Type':'application/json','X-Neko-CSRF':csrf},body:'{}'}:{});if(!r.ok)throw Error();state=await r.json();csrf=state.csrf||csrf;renderAgentCard();}catch{el('connection').textContent='插件连接中断';if(state){state.stale=true;state.estimated_tokens=null;render();el('connection').textContent='插件连接中断';}}}
 el('refreshNow').onclick=()=>{el('menu').hidden=true;update(true);};update();setInterval(()=>update(),15000);
 
@@ -47,12 +47,59 @@ pollAgent();setInterval(pollAgent,5000);
 
 async function requestSpokenLine(line){if(!csrf)return;try{const r=await fetch('/api/reply',{method:'POST',headers:{'Content-Type':'application/json','X-Neko-CSRF':csrf},body:JSON.stringify({line})});const result=await r.json();el('connection').textContent=r.ok&&result.submitted?'已请求原软件回应\n出声取决于语音状态':r.status===429?'语音稍等一下喵～':result.error||'原软件语音暂不可用';}catch{el('connection').textContent='原软件语音未连接';}}
 
-let recordingActive=false, recordQueue=Promise.resolve();
-function recordAction(action){
- const work=async()=>{if(!csrf)return null;const r=await fetch('/api/recording',{method:'POST',headers:{'Content-Type':'application/json','X-Neko-CSRF':csrf},body:JSON.stringify({action})});if(!r.ok)throw Error('记录未保存喵～');const data=await r.json();recordingActive=!!data.active;el('recordMode').textContent=recordingActive?'退出记录模式':'开始记录模式';return data;};
- const result=recordQueue.then(work);recordQueue=result.catch(()=>{el('connection').textContent='记录连接中断喵～';});return result;
+let recordingActive=false, recordingState=null, recordQueue=Promise.resolve(), exiting=false;
+function renderRecording(d){
+ recordingState=d;recordingActive=!!d.active;
+ el('recordMode').textContent=recordingActive?'退出记录模式':'开始记录模式';
+ el('exitRecord').textContent=recordingActive?'退出模式 · 恢复 NEKO':'开始记录模式';
+ el('recordCounts').textContent=d.error||`本次摸头 ${d.pet||0} · 询问 ${d.ask||0} ｜累计摸头 ${d.totals?.pet||0} · 询问 ${d.totals?.ask||0}`;
+ el('historyTotals').textContent=`共 ${d.totals?.sessions||0} 段记录，摸头 ${d.totals?.pet||0} 次，询问 ${d.totals?.ask||0} 次喵～`;
+ el('memoryStatus').textContent=d.pending_memory?`${d.pending_memory} 段已保存在本机，等待写入 YUI 记忆；后台会重试喵～`:'已完成记录的记忆写入均已确认喵～';
+ el('historyRows').replaceChildren();for(const row of d.history||[]){const article=document.createElement('article');article.textContent=`${row.start}\n${row.active?'记录中':row.end||'已结束'}\n摸头 ${row.pet||0} 次 · 询问 ${row.ask||0} 次\n${row.active?'互动正在保存':row.memory_saved?'已写入 YUI 记忆':'本机已保存 · 记忆待同步'}`;el('historyRows').append(article);}
 }
-async function finishRecording(){native('recordEnd');const d=await recordAction('end');if(d?.summary){say(d.summary);clearTimeout(timer);el('connection').textContent=d.memory_saved?'已写入 YUI 记忆喵～':'记录已保存在本机，记忆写入未成功；可重试喵～';}return d;}
-el('recordMode').onclick=async()=>{el('menu').hidden=true;if(recordingActive)await finishRecording();else{const d=await recordAction('start');if(d?.active){native('recordStart');restore();}else if(d?.error)say(d.error);}};
-el('retryMemory').onclick=async()=>{el('menu').hidden=true;const d=await recordAction('retry');say(d?.memory_saved?'已写入 YUI 的记忆喵～':'记忆尚未写入，记录仍保存在本机喵～');};
-const beginRecording=setInterval(async()=>{if(!csrf)return;clearInterval(beginRecording);const d=await recordAction('start');if(d?.active)native('recordStart');else if(d?.error)say(d.error);},200);
+function pendingClicks(){try{return JSON.parse(localStorage.getItem('catfood-pending-clicks')||'[]');}catch{return [];}}
+function savePending(items){localStorage.setItem('catfood-pending-clicks',JSON.stringify(items));}
+async function sendRecord(body){
+ if(!csrf)throw Error('插件尚未连接喵～');
+ const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),8000);
+ try{const r=await fetch('/api/recording',{method:'POST',headers:{'Content-Type':'application/json','X-Neko-CSRF':csrf},body:JSON.stringify(body),signal:controller.signal});if(!r.ok)throw Error('记录未保存喵～');const d=await r.json();if(d.error)throw Error(d.error);renderRecording(d);return d;}finally{clearTimeout(timeout);}
+}
+async function flushClicks(){for(const item of pendingClicks()){await sendRecord(item);savePending(pendingClicks().filter(x=>x.event_id!==item.event_id));}}
+function recordAction(action){
+ if(['pet','ask'].includes(action)){
+  if(!recordingActive||exiting)return Promise.resolve(null);
+  const item={action,event_id:crypto.randomUUID(),session_id:recordingState.id};savePending([...pendingClicks(),item]);
+ }
+ const work=async()=>{await flushClicks();return ['pet','ask'].includes(action)?recordingState:sendRecord({action});};
+ const result=recordQueue.then(work);recordQueue=result.catch(()=>{el('recordCounts').textContent='记录暂未同步，点击已暂存在本机，将自动重试喵～';});return result;
+}
+async function finishRecording(){
+ if(exiting)return;exiting=true;el('exitRecord').disabled=true;
+ // Restore the original immediately even when the loopback server is unavailable.
+ native('recordEnd');document.body.classList.add('record-inactive');el('historyPanel').hidden=true;
+ try{const d=await recordAction('end');if(d?.summary){say(d.summary);clearTimeout(timer);el('connection').textContent=d.memory_saved?'已写入 YUI 记忆喵～':'互动已保存，记忆在后台同步喵～';}return d;}
+ catch(e){say('已恢复 NEKO。\n记录仍待同步，请重试退出喵～');clearTimeout(timer);}
+ finally{exiting=false;el('exitRecord').disabled=false;}
+}
+let nativeTimer=null;
+window.catfoodNativeState=d=>{
+ clearTimeout(nativeTimer);
+ if(!d.active||!recordingActive||exiting)return;
+ if(d.ok){document.body.classList.remove('record-inactive');el('recordCounts').title='原程序窗口已隐藏';}
+ else{document.body.classList.add('record-inactive');native('recordEnd');recordAction('end').catch(()=>{});say('未能隐藏原版窗口。\n已保留正常模式喵～');clearTimeout(timer);el('connection').textContent='请确认使用新版桌面窗口程序';}
+};
+async function startRecording(){
+ try{const d=await recordAction('start');if(!d?.active)return;
+ document.body.classList.add('record-inactive');restore();
+ if(!native('recordStart')){await recordAction('end');say('请从 NEKO 打开桌面挂件喵～');clearTimeout(timer);return;}
+ nativeTimer=setTimeout(()=>window.catfoodNativeState({active:true,ok:false}),3000);
+ }catch(e){say(e.message);}
+}
+el('recordMode').onclick=()=>{el('menu').hidden=true;return recordingActive?finishRecording():startRecording();};
+el('exitRecord').onclick=()=>recordingActive?finishRecording():startRecording();
+el('historyToggle').onclick=()=>{el('historyPanel').hidden=false;recordAction('status').catch(()=>{});};el('closeHistory').onclick=()=>el('historyPanel').hidden=true;
+async function retryMemory(){const d=await recordAction('retry');if(d)say(d.pending_memory?'互动已保存，正在重试记忆同步喵～':'已写入 YUI 的记忆喵～');}
+el('retryMemory').onclick=()=>{el('menu').hidden=true;retryMemory().catch(()=>{});};el('historyRetry').onclick=()=>retryMemory().catch(()=>{});
+document.body.classList.add('record-inactive');
+const beginRecording=setInterval(async()=>{if(!csrf)return;clearInterval(beginRecording);try{const d=await recordAction('status');if(d?.active){native('recordStart');nativeTimer=setTimeout(()=>window.catfoodNativeState({active:true,ok:false}),3000);}else if(!d?.initialized)await startRecording();else if(d.summary){say(d.summary);clearTimeout(timer);}}catch{}},200);
+let recordPollBusy=false;setInterval(async()=>{if(!csrf||exiting||recordPollBusy)return;recordPollBusy=true;try{await recordAction('status');}catch{}finally{recordPollBusy=false;}},5000);

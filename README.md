@@ -73,3 +73,10 @@ API 参考：[OpenAI Costs](https://developers.openai.com/api/reference/python/r
 OpenRouter 需要 **Management Key**，普通聊天 Key 可能没有权限。硅基流动使用中国站 API Key，读取 `totalBalance`。密钥只发往固定对应平台。没有凭据时展示未连接，不推测余额；不同平台与不同币种不合并。
 
 官方接口参考：[OpenRouter credits](https://openrouter.ai/docs/api/api-reference/credits/get-remaining-credits)、[硅基流动 OpenAPI](https://github.com/siliconflow/siliconcloud/blob/main/openapi.yaml)、[OpenAI 组织 API](https://developers.openai.com/api/reference/python/resources/admin/subresources/organization)。
+
+
+## 记录与退出（0.8.1）
+
+挂件底部「退出模式 · 恢复 NEKO」会恢复原版窗口并显示互动总结；退出后不会因刷新自动再次进入。底部「互动记录」可查看累计次数和最近 100 段历史。每次点击保存在本机，全部会话保留在插件用户数据目录 `recording/recording.json`（另有备份）。YUI 记忆失败会自动重试，界面明确标注待同步，不阻塞下一段记录。旧版已经覆盖的会话无法恢复。
+
+记录模式需要原生挂件成功隐藏 NEKO 窗口，浏览器页面不接管桌面。无法隐藏时自动保留正常模式。升级 0.8.1 后请停用并重新启用插件以加载新的原生程序。

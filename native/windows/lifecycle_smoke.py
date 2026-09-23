@@ -95,5 +95,7 @@ finally:
         if proc and proc.poll() is None:
             proc.terminate()
             proc.wait(timeout=10)
+    if fixture_exe.exists():
+        fixture_exe.unlink()
     server.shutdown()
     server.server_close()
