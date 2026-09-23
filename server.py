@@ -92,6 +92,8 @@ def start_server(monitor, port=48923, request_reply=None, agent_status=None, rec
                     )
                 if self.path == "/api/usage":
                     return self.send(200, monitor.record_usage(body))
+                if self.path == "/api/select":
+                    return self.send(200, monitor.select(body.get("profile")))
                 if self.path == "/api/config":
                     monitor.configure(body)
                     return self.send(200, monitor.refresh())

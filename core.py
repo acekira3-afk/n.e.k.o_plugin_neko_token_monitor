@@ -71,6 +71,10 @@ class Monitor:
         self.config = {
             "source": "deepseek",
             "model": "",
+            "quota_remaining": None,
+            "quota_total": None,
+            "quota_unit": "次",
+            "quota_reset": "",
             "budget": 0,
             "budget_start": dt.date.today().replace(day=1).isoformat(),
             "endpoint": "",
@@ -105,7 +109,18 @@ class Monitor:
         with self.lock:
             cfg = dict(self.config)
             source = values.get("source", cfg["source"])
-            if source not in ("deepseek", "openai", "anthropic", "custom", "manual", "jev", "codex"):
+            if source not in (
+                "deepseek",
+                "openai",
+                "anthropic",
+                "custom",
+                "manual",
+                "jev",
+                "codex",
+                "openrouter",
+                "siliconflow",
+                "manual_quota",
+            ):
                 raise ValueError("查询方式无效")
             # Never reuse a previous provider's secret at a new destination.
             if source != cfg["source"] or values.get("endpoint", cfg["endpoint"]) != cfg["endpoint"]:
@@ -116,6 +131,27 @@ class Monitor:
                     if not isinstance(values[field], str) or len(values[field]) > 500:
                         raise ValueError("设置格式无效")
                     cfg[field] = values[field].strip()
+            for field in ("quota_remaining", "quota_total"):
+                if field in values:
+                    raw = values[field]
+                    number = None if raw in (None, "") else float(raw)
+                    if number is not None and (not math.isfinite(number) or not 0 <= number <= 1e12):
+                        raise ValueError("额度数字无效")
+                    cfg[field] = number
+            if "quota_unit" in values:
+                if values["quota_unit"] not in ("次", "token", "%"):
+                    raise ValueError("额度单位无效")
+                cfg["quota_unit"] = values["quota_unit"]
+            if "quota_reset" in values:
+                value = values["quota_reset"]
+                if not isinstance(value, str) or len(value) > 80:
+                    raise ValueError("重置时间无效")
+                cfg["quota_reset"] = value
+            remaining, total = cfg["quota_remaining"], cfg["quota_total"]
+            if remaining is not None and total is not None and remaining > total:
+                raise ValueError("剩余额度不能超过总额度")
+            if cfg["quota_unit"] == "%" and remaining is not None and remaining > 100:
+                raise ValueError("百分比不能超过 100")
             dt.date.fromisoformat(cfg["budget_start"])
             if source == "custom":
                 validate_endpoint(cfg["endpoint"])
@@ -150,11 +186,25 @@ class Monitor:
                 if type(values["alerts"]) is not bool:
                     raise ValueError("提醒设置无效")
                 cfg["alerts"] = values["alerts"]
-            if source in ("openai", "anthropic"):
+            if source in ("openai", "anthropic", "openrouter"):
                 cfg["currency"] = "USD"
+            if source == "siliconflow":
+                cfg["currency"] = "CNY"
             changed_key = any(
                 cfg[k] != self.config[k]
-                for k in ("source", "endpoint", "value_path", "api_key", "currency", "budget", "budget_start")
+                for k in (
+                    "source",
+                    "endpoint",
+                    "value_path",
+                    "api_key",
+                    "currency",
+                    "budget",
+                    "budget_start",
+                    "quota_remaining",
+                    "quota_total",
+                    "quota_unit",
+                    "quota_reset",
+                )
             )
             self.write("config.json", cfg)
             self.config = cfg
@@ -188,7 +238,8 @@ class Monitor:
                 "reported_usage": usage,
                 "config": cfg,
                 "basis": self.state.get("basis", "官方账户余额"),
-                "configured": self.config["source"] in ("manual", "jev", "codex") or bool(self.config["api_key"]),
+                "configured": self.config["source"] in ("manual", "jev", "codex", "manual_quota")
+                or bool(self.config["api_key"]),
                 "balances": self.state.get("balances", []),
                 "selected": row,
                 "updated_at": updated,
@@ -220,6 +271,12 @@ class Monitor:
                     self.write("state.json", self.state)
                 except Exception as exc:
                     self.state["error"] = str(exc) if isinstance(exc, ValueError) else "Codex 额度查询失败"
+                return self.snapshot()
+            if self.config["source"] == "manual_quota":
+                # Manual values retain their entry time; polling must not make them look fresh.
+                if not self.state.get("updated_at") and self.config["quota_remaining"] is not None:
+                    self.state = {"updated_at": time.time(), "basis": "手动记录 · 不自动扣减或重置"}
+                    self.write("state.json", self.state)
                 return self.snapshot()
             if self.config["source"] == "jev":
                 return self.snapshot()

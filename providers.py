@@ -47,6 +47,21 @@ def query(cfg, request=read_json):
     if source == "manual":
         value = money(cfg["budget"])
         basis = "手动填写 · 不自动扣减"
+    elif source in ("openrouter", "siliconflow"):
+        url = (
+            "https://openrouter.ai/api/v1/credits"
+            if source == "openrouter"
+            else "https://api.siliconflow.cn/v1/user/info"
+        )
+        payload = request(url, {"Authorization": "Bearer " + cfg["api_key"]})
+        data = payload["data"]
+        if source == "openrouter":
+            value = money(data["total_credits"]) - money(data["total_usage"])
+        else:
+            if payload.get("status") is not True:
+                raise ValueError("硅基流动余额查询失败")
+            value = money(data["totalBalance"])
+        basis = "服务商账户共享余额 · 非单模型独立额度"
     elif source == "custom":
         payload = request(validate_endpoint(cfg["endpoint"]), {"Authorization": "Bearer " + cfg["api_key"]})
         value = payload

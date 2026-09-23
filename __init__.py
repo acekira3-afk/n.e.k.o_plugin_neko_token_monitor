@@ -7,7 +7,7 @@ from pathlib import Path
 from plugin.sdk.plugin import NekoPluginBase, Ok, lifecycle, neko_plugin, plugin_entry
 
 from .agent_status import AgentStatus
-from .core import Monitor
+from .fleet import Fleet
 from .recording import Recording
 from .server import start_server
 
@@ -84,7 +84,7 @@ class NekoTokenMonitorPlugin(NekoPluginBase):
     async def startup(self, **_):
         self.logger.info("Budget widget: startup entered")
         if self.monitor is None:
-            monitor = Monitor(self.data_path("balance-monitor"), announce=self.announce)
+            monitor = Fleet(self.data_path("balance-monitor"), announce=self.announce)
             self.logger.info("Budget widget: storage ready")
             self.recording = Recording(self.data_path("recording"))
             server, thread = start_server(

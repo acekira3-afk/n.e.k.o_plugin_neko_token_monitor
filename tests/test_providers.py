@@ -136,3 +136,76 @@ def test_codex_quota_missing_is_not_zero():
         pass
     else:
         raise AssertionError("Unavailable quota became zero")
+
+
+def test_official_shared_balances_and_destinations():
+    for source, expected_url, payload, expected in [
+        (
+            "openrouter",
+            "https://openrouter.ai/api/v1/credits",
+            {"data": {"total_credits": "20", "total_usage": "3.25"}},
+            "16.75",
+        ),
+        (
+            "siliconflow",
+            "https://api.siliconflow.cn/v1/user/info",
+            {"status": True, "data": {"balance": "2", "chargeBalance": "4", "totalBalance": "6"}},
+            "6",
+        ),
+    ]:
+
+        def request(url, headers):
+            assert url == expected_url
+            assert headers == {"Authorization": "Bearer test-secret"}
+            return payload
+
+        result = providers.query(dict(source=source, api_key="test-secret", currency="USD"), request)
+        assert result["balance_infos"][0]["total_balance"] == expected
+        assert "共享" in result["basis"]
+
+
+def test_fleet_migration_keys_isolated_and_persistent(tmp_path):
+    fleet_module = load("fleet")
+    old = core.Monitor(tmp_path)
+    old.configure({"api_key": "deepseek-test-secret"})
+    fleet = fleet_module.Fleet(tmp_path)
+    assert fleet.monitors["deepseek"].config["api_key"] == "deepseek-test-secret"
+    fleet.configure({"profile": "openrouter", "api_key": "router-test-secret"})
+    fleet.configure({"profile": "deepseek", "api_key": ""})
+    assert fleet.monitors["deepseek"].config["api_key"] == "deepseek-test-secret"
+    assert fleet.monitors["openrouter"].config["api_key"] == "router-test-secret"
+    state = fleet.snapshot()
+    assert "test-secret" not in str(state)
+    restarted = fleet_module.Fleet(tmp_path)
+    assert restarted.selected == "deepseek"
+    assert restarted.enabled == {"deepseek", "openrouter"}
+    assert restarted.monitors["openrouter"].config["api_key"] == "router-test-secret"
+
+
+def test_manual_quota_independent_and_not_refreshed_by_polling(tmp_path):
+    fleet = load("fleet").Fleet(tmp_path)
+    fleet.configure({"profile": "gemini", "quota_remaining": 25, "quota_total": 100})
+    first = fleet.refresh()
+    fleet.configure({"profile": "claude", "quota_remaining": 60, "quota_unit": "%"})
+    fleet.refresh()
+    fleet.select("gemini")
+    assert fleet.refresh()["updated_at"] == first["updated_at"]
+    assert fleet.snapshot()["config"]["quota_remaining"] == 25
+    assert fleet.snapshot()["selected"] is None
+    assert fleet.snapshot()["estimated_tokens"] is None
+    try:
+        fleet.configure({"profile": "gemini", "quota_remaining": 101})
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("remaining greater than total accepted")
+    assert fleet.snapshot()["config"]["quota_remaining"] == 25
+
+
+def test_fleet_jev_ledger_survives_source_switch(tmp_path):
+    fleet = load("fleet").Fleet(tmp_path)
+    fleet.record_usage(dict(provider="jev", request_id="test-new", model="jev", input_tokens=7, output_tokens=3))
+    fleet.configure({"profile": "jev"})
+    assert fleet.snapshot()["reported_usage"]["input_tokens"] == 7
+    fleet.configure({"profile": "manual", "budget": 12})
+    assert fleet.snapshot()["reported_usage"]["output_tokens"] == 3

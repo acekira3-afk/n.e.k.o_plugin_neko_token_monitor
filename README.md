@@ -55,3 +55,21 @@
 社区作品，并非 NEKO 官方插件。YUI 身份参考来自 [Project N.E.K.O](https://github.com/Project-N-E-K-O/N.E.K.O)，保留其素材许可与 NOTICE；当前 Q 版图片为 AI 辅助生成。代码采用 Apache-2.0。
 
 API 参考：[OpenAI Costs](https://developers.openai.com/api/reference/python/resources/admin/subresources/organization/subresources/usage)、[Claude Usage and Cost](https://platform.claude.com/docs/en/manage-claude/usage-cost-api)。
+
+
+## 0.8.0 多模型额度总览
+
+挂件菜单 → **模型额度总览**。每个平台独立设置并保存在本机；点击卡片的「设置 / 接入」填写，保存后自动切换展示。已配置来源继续后台查询，点「气泡展示」切换主气泡，不需要重新填写其他来源密钥。旧版本当前来源会自动迁移。
+
+| 类型 | 来源 | 展示内容 |
+| --- | --- | --- |
+| 自动套餐查询 | Codex | 本机登录账号返回的额度百分比与重置时间 |
+| 自动余额查询 | DeepSeek、OpenRouter、硅基流动 | 服务商账户共享余额，非单模型独立额度 |
+| API 预算估算 | GPT / OpenAI API、Claude API | 自定预算减组织费用，非官方余额或订阅额度 |
+| 手动额度 | ChatGPT、Claude / Claude Code、Gemini、Kimi、Qwen、豆包、GLM | 手填剩余、总量、单位、重置备注；尚未接入自动查询 |
+| 本机用量 | JEV | 桥接上报累计 token，非剩余额度 |
+| 其他 | 自定义 HTTPS 接口、手动金额 | 用户自己的服务商或预算 |
+
+OpenRouter 需要 **Management Key**，普通聊天 Key 可能没有权限。硅基流动使用中国站 API Key，读取 `totalBalance`。密钥只发往固定对应平台。没有凭据时展示未连接，不推测余额；不同平台与不同币种不合并。
+
+官方接口参考：[OpenRouter credits](https://openrouter.ai/docs/api/api-reference/credits/get-remaining-credits)、[硅基流动 OpenAPI](https://github.com/siliconflow/siliconcloud/blob/main/openapi.yaml)、[OpenAI 组织 API](https://developers.openai.com/api/reference/python/resources/admin/subresources/organization)。
