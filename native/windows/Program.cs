@@ -10,7 +10,8 @@ using Microsoft.Web.WebView2.WinForms;
 
 class CatFood : Form {
     readonly WebView2 web = new WebView2();
-    readonly List<IntPtr> hidden = new List<IntPtr>();
+    readonly Dictionary<IntPtr,uint> hidden = new Dictionary<IntPtr,uint>();
+    bool recording;
     readonly Timer life = new Timer { Interval=1000 };
     readonly int parent;
     readonly string baseUrl;
@@ -22,6 +23,16 @@ class CatFood : Form {
     delegate bool EnumProc(IntPtr window, IntPtr data);
     [DllImport("user32.dll")] static extern bool IsWindowVisible(IntPtr window);
     [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr window, out uint pid);
+    [DllImport("user32.dll")] static extern bool IsWindow(IntPtr window);
+    [DllImport("kernel32.dll", SetLastError=true)] static extern IntPtr CreateToolhelp32Snapshot(uint flags, uint pid);
+    [DllImport("kernel32.dll", CharSet=CharSet.Auto)] static extern bool Process32First(IntPtr snapshot, ref ProcessEntry entry);
+    [DllImport("kernel32.dll", CharSet=CharSet.Auto)] static extern bool Process32Next(IntPtr snapshot, ref ProcessEntry entry);
+    [DllImport("kernel32.dll")] static extern bool CloseHandle(IntPtr handle);
+    [StructLayout(LayoutKind.Sequential, CharSet=CharSet.Auto)] struct ProcessEntry {
+        public uint size, usage, pid; public IntPtr heap; public uint module, threads, parent;
+        public int priority; public uint flags;
+        [MarshalAs(UnmanagedType.ByValTStr,SizeConst=260)] public string exe;
+    }
     [DllImport("user32.dll")] static extern bool ShowWindow(IntPtr window, int command);
     public CatFood(string[] args) {
         parent=int.Parse(args[0]);baseUrl=args[1];stopFile=args[2];smoke=Array.IndexOf(args,"--smoke")>=0;
@@ -41,14 +52,33 @@ class CatFood : Form {
             web.CoreWebView2.NavigationCompleted+=(a,b)=>{if(smoke){File.WriteAllText(stopFile+".ready",b.IsSuccess?"ready":"failed");Close();}};
             web.Source=new Uri(baseUrl+"/widget");
         }catch(Exception){MessageBox.Show("猫粮窗口无法启动。请安装 Microsoft Edge WebView2 Runtime 后重试。","猫粮");Close();}};
-        life.Tick+=(s,e)=>{try {if(Process.GetProcessById(parent).HasExited||File.Exists(stopFile))Close();}catch {Close();}};life.Start();
+        life.Tick+=(s,e)=>{try {if(Process.GetProcessById(parent).HasExited||File.Exists(stopFile))Close();else if(recording)HideOriginal();}catch {Close();}};life.Start();
         FormClosing+=(s,e)=>{Restore();life.Stop();};
     }
-    void Restore(){foreach(var window in hidden)ShowWindow(window,8);hidden.Clear();}
+    HashSet<uint> HostProcesses(){
+        var all=new Dictionary<uint,ProcessEntry>();var hosts=new HashSet<uint>();
+        var handle=CreateToolhelp32Snapshot(2,0);
+        if(handle==new IntPtr(-1))return hosts;
+        try{var entry=new ProcessEntry { size=(uint)Marshal.SizeOf(typeof(ProcessEntry)) };
+            if(Process32First(handle,ref entry))do{all[entry.pid]=entry;}while(Process32Next(handle,ref entry));
+        }finally{CloseHandle(handle);}
+        foreach(var pair in all){var name=Path.GetFileNameWithoutExtension(pair.Value.exe).Replace(".","").Replace("-","").Replace("_","").Replace(" ","").ToLowerInvariant();
+            if(name=="neko"||name=="nekodesktop")hosts.Add(pair.Key);
+        }
+        bool changed;do{changed=false;foreach(var pair in all)if(hosts.Contains(pair.Value.parent)&&hosts.Add(pair.Key))changed=true;}while(changed);
+        hosts.Remove((uint)Process.GetCurrentProcess().Id);return hosts;
+    }
+    async void HideOriginal(){
+        var hosts=HostProcesses();bool ok=true;int found=0;
+        EnumWindows((window,data)=>{GetWindowThreadProcessId(window,out uint pid);
+            if(hosts.Contains(pid)){found++;if(IsWindowVisible(window)){hidden[window]=pid;ShowWindow(window,0);if(IsWindowVisible(window))ok=false;}}
+            return true;},IntPtr.Zero);
+        try{if(web.CoreWebView2!=null)await web.CoreWebView2.ExecuteScriptAsync("window.catfoodNativeState && window.catfoodNativeState({active:true,ok:"+((found>0&&ok)?"true":"false")+",targets:"+found+"})");}catch{}
+    }
+    void Restore(){recording=false;foreach(var pair in hidden){if(IsWindow(pair.Key)){GetWindowThreadProcessId(pair.Key,out uint pid);if(pid==pair.Value)ShowWindow(pair.Key,8);}}hidden.Clear();}
     void Action(string action){
         switch(action){
-        case "recordStart":
-            EnumWindows((window,data)=>{GetWindowThreadProcessId(window,out uint pid);try{var p=Process.GetProcessById((int)pid);if(p.ProcessName.Equals("N.E.K.O",StringComparison.OrdinalIgnoreCase)&&IsWindowVisible(window)){hidden.Add(window);ShowWindow(window,0);}}catch{}return true;},IntPtr.Zero);break;
+        case "recordStart":recording=true;HideOriginal();break;
         case "recordEnd":Restore();break;
         case "hide":Close();break;
         case "dragStart":mouse=Cursor.Position;origin=Location;dragging=true;break;
@@ -56,5 +86,7 @@ class CatFood : Form {
         case "dragMove":if(dragging)Location=new Point(origin.X+Cursor.Position.X-mouse.X,origin.Y+Cursor.Position.Y-mouse.Y);break;
         }
     }
-    [STAThread] static void Main(string[] args){if(args.Length<3)return;Application.EnableVisualStyles();Application.SetCompatibleTextRenderingDefault(false);Application.Run(new CatFood(args));}
+    [STAThread] static void Main(string[] args){
+        if(args.Length==1&&args[0]=="--fixture"){Application.EnableVisualStyles();var host=new Form {Text="NEKO lifecycle fixture"};host.Shown+=(s,e)=>new Form {Text="NEKO chat fixture"}.Show();Application.Run(host);return;}
+        if(args.Length<3)return;Application.EnableVisualStyles();Application.SetCompatibleTextRenderingDefault(false);Application.Run(new CatFood(args));}
 }
