@@ -39,9 +39,13 @@ class NekoTokenMonitorPlugin(NekoPluginBase):
         else:
             executable.chmod(executable.stat().st_mode | 0o100)
         self.logger.info("Budget widget: launching native window")
-        self.widget = subprocess.Popen(
-            arguments, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, close_fds=False
-        )
+        log_path = self.data_path("widget-native.log")
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(log_path, "w") as native_log:
+            os.chmod(log_path, 0o600)
+            self.widget = subprocess.Popen(
+                arguments, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=native_log, close_fds=False
+            )
         self.logger.info("Budget widget: native process launched")
         return {"shown": True, "pid": self.widget.pid}
 
@@ -148,7 +152,7 @@ class NekoTokenMonitorPlugin(NekoPluginBase):
     @plugin_entry(
         id="show_widget",
         name="显示猫粮挂件",
-        description="显示透明桌面猫娘和余额气泡。收起挂件后可通过这个入口重新打开。",
+        description="显示透明桌面猫娘和余额气泡。退出记录模式后可通过这个入口重新打开。",
     )
     async def show_widget_entry(self, **_):
         if self.monitor is None:

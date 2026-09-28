@@ -36,7 +36,7 @@ function pet(){recordAction("pet");bounce('character');bounce('thought');const l
 let drag=false,start=null;el('character').onpointerdown=e=>{clickAnimations.get(el('character'))?.cancel();start={x:e.screenX,y:e.screenY};drag=false;el('character').setPointerCapture(e.pointerId);native('dragStart');};el('character').onpointermove=e=>{if(!start)return;if(Math.hypot(e.screenX-start.x,e.screenY-start.y)>4)drag=true;if(drag)native('dragMove');};el('character').onpointerup=()=>{native('dragEnd');start=null;if(drag)return;pet();};el('character').onpointercancel=()=>{start=null;native('dragEnd');};
 el('menuToggle').onclick=()=>el('menu').hidden=!el('menu').hidden;
 for(const [id,value] of [['balanceMode','balance'],['tokenMode','token']])el(id).onclick=()=>{mode=value;idleCard=false;localStorage.setItem('neko-budget-mode',mode);el('menu').hidden=true;restore();};
-el('settings').onclick=()=>{el('menu').hidden=true;openAccount();};el('hide').onclick=async()=>{el('menu').hidden=true;if(recordingActive){await finishRecording();}if(!native('hide'))say('关闭窗口就能收起我喵～');};
+el('settings').onclick=()=>{el('menu').hidden=true;openAccount();};
 async function update(refresh=false){try{const r=await fetch(refresh?'/api/refresh':'/api/status',refresh?{method:'POST',headers:{'Content-Type':'application/json','X-Neko-CSRF':csrf},body:'{}'}:{});if(!r.ok)throw Error();state=await r.json();csrf=state.csrf||csrf;renderAgentCard();}catch{el('connection').textContent='插件连接中断';if(state){state.stale=true;state.estimated_tokens=null;render();el('connection').textContent='插件连接中断';}}}
 el('refreshNow').onclick=()=>{el('menu').hidden=true;update(true);};update();setInterval(()=>update(),15000);
 
@@ -84,8 +84,8 @@ let nativeTimer=null;
 window.catfoodNativeState=d=>{
  clearTimeout(nativeTimer);
  if(!d.active||!recordingActive||exiting)return;
- if(d.ok){document.body.classList.remove('record-inactive');el('recordCounts').title='原程序窗口已隐藏';}
- else{document.body.classList.add('record-inactive');native('recordEnd');recordAction('end').catch(()=>{});say('未能隐藏原版窗口。\n已保留正常模式喵～');clearTimeout(timer);el('connection').textContent='请确认使用新版桌面窗口程序';}
+ if(d.ok){document.body.classList.remove('record-inactive');el('recordCounts').title=d.paused?'原模型已暂停，原程序窗口已隐藏':'原程序窗口已隐藏';}
+ else{document.body.classList.add('record-inactive');native('recordEnd');recordAction('end').catch(()=>{});say('未能接管原版窗口。\n已保留正常模式喵～');clearTimeout(timer);el('connection').textContent='请确认辅助功能权限及原版人物控制可用';}
 };
 async function startRecording(){
  try{const d=await recordAction('start');if(!d?.active)return;

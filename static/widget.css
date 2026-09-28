@@ -7,3 +7,9 @@
 #detail{font-size:12px;white-space:normal;line-height:1.4;max-width:260px;margin:auto}#accountPanel header{position:sticky;top:-20px;background:#fffdf8;z-index:1;padding-top:8px}
 
 #recordBar{position:fixed;left:8px;right:8px;bottom:6px;z-index:30;border:1px solid #d8d5e5;border-radius:10px;padding:6px;background:#fffdf8;font-size:11px;display:flex;gap:6px;align-items:center;flex-wrap:wrap}#recordBar button{border:0;border-radius:6px;background:#353b73;color:#fff;padding:6px;font-size:11px}#recordCounts{width:100%;color:#626780}#pet{top:0;transform:translateX(-50%);height:calc(100% - 66px)}#character{width:205px;height:207px}#thought{height:168px}#amount{font-size:38px}#quip{font-size:19px;padding:9px 0}#connection{top:246px}#agentStatus{top:278px}#historyPanel{position:fixed;inset:4px;z-index:110;overflow:auto;background:#fffdf8;border:2px solid #353b73;border-radius:14px;padding:16px;font-size:13px;user-select:text}#historyPanel[hidden]{display:none}#historyPanel header{display:flex;align-items:center;justify-content:space-between}#historyPanel button{padding:8px;border:0;border-radius:8px;background:#eeeaf7}#historyRows article{border-top:1px solid #ddd;padding:12px 0;line-height:1.7;white-space:pre-line}body.record-inactive #character,body.record-inactive .dot{display:none}body.record-inactive #thought:after{display:none}
+
+/* Keep the menu outside the transformed character layer and above the record bar. */
+#menu{position:fixed;top:auto;bottom:76px;right:48px;z-index:50;width:190px;max-width:calc(100vw - 64px);max-height:calc(100vh - 88px);overflow-y:auto;overscroll-behavior:contain}
+
+/* Keep the menu trigger clear of YUI's ears. */
+#menuToggle{top:142px;right:2px}
