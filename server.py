@@ -6,7 +6,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 
-def start_server(monitor, port=48923, request_reply=None, agent_status=None, recording=None):
+def start_server(monitor, port=48923, request_reply=None, agent_status=None, recording=None, takeover=None):
     csrf = secrets.token_urlsafe(32)
     reply_lock = threading.Lock()
     last_reply = [None]
@@ -66,6 +66,9 @@ def start_server(monitor, port=48923, request_reply=None, agent_status=None, rec
                 "/settings.js": ("settings.js", "text/javascript; charset=utf-8"),
                 "/settings.css": ("settings.css", "text/css; charset=utf-8"),
                 "/account-page.js": ("account-page.js", "text/javascript; charset=utf-8"),
+                "/music.js": ("music.js", "text/javascript; charset=utf-8"),
+                "/music-grain.wav": ("music-grain.wav", "audio/wav"),
+                "/music-score.json": ("music-score.json", "application/json; charset=utf-8"),
                 "/widget.js": ("widget.js", "text/javascript; charset=utf-8"),
                 "/widget.css": ("widget.css", "text/css; charset=utf-8"),
                 "/yui-chibi.png": ("yui-chibi.png", "image/png"),
@@ -89,10 +92,17 @@ def start_server(monitor, port=48923, request_reply=None, agent_status=None, rec
                 if self.path == "/api/recording":
                     return self.send(
                         200,
-                        recording.action(body.get("action", "status"), body.get("event_id"), body.get("session_id"))
+                        recording.action(
+                            body.get("action", "status"), body.get("event_id"), body.get("session_id"),
+                            body.get("kind"), body.get("message"),
+                        )
                         if recording
                         else {"active": False},
                     )
+                if self.path == "/api/takeover":
+                    if takeover is None or not isinstance(body.get("session_id"), str) or type(body.get("ok")) is not bool:
+                        return self.send(400, {"error": "接管状态无效"})
+                    return self.send(200, {"accepted": takeover.report(body["session_id"], body["ok"], body.get("reason"))})
                 if self.path == "/api/usage":
                     return self.send(200, monitor.record_usage(body))
                 if self.path == "/api/select":

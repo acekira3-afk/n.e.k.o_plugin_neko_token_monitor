@@ -32,7 +32,7 @@ function bounce(id){
 
 el('thought').onclick=()=>{recordAction('ask');bounce('thought');idleCard=!idleCard;mode='balance';localStorage.setItem('neko-budget-mode',mode);restore();};
 const petLines=['突、突然摸头干嘛……\n只许再摸一下喵～','哼，头发都被你揉乱了。\n……也没说不让你摸喵～','好啦，本喵在这里。\n今天也辛苦你了喵～','碳基生物，轻一点。\n本喵又不会跑喵～'];let petIndex=0;
-function pet(){recordAction("pet");bounce('character');bounce('thought');const lines=[...quips,...petLines];const line=lines[petIndex++%lines.length];say(line);requestSpokenLine(line);}
+function pet(){recordAction("pet");bounce('character');bounce('thought');if(window.catfoodMusic?.pet())return;const lines=[...quips,...petLines];const line=lines[petIndex++%lines.length];say(line);requestSpokenLine(line);}
 let drag=false,start=null;el('character').onpointerdown=e=>{clickAnimations.get(el('character'))?.cancel();start={x:e.screenX,y:e.screenY};drag=false;el('character').setPointerCapture(e.pointerId);native('dragStart');};el('character').onpointermove=e=>{if(!start)return;if(Math.hypot(e.screenX-start.x,e.screenY-start.y)>4)drag=true;if(drag)native('dragMove');};el('character').onpointerup=()=>{native('dragEnd');start=null;if(drag)return;pet();};el('character').onpointercancel=()=>{start=null;native('dragEnd');};
 el('menuToggle').onclick=()=>el('menu').hidden=!el('menu').hidden;
 for(const [id,value] of [['balanceMode','balance'],['tokenMode','token']])el(id).onclick=()=>{mode=value;idleCard=false;localStorage.setItem('neko-budget-mode',mode);el('menu').hidden=true;restore();};
@@ -48,13 +48,25 @@ pollAgent();setInterval(pollAgent,5000);
 async function requestSpokenLine(line){if(!csrf)return;try{const r=await fetch('/api/reply',{method:'POST',headers:{'Content-Type':'application/json','X-Neko-CSRF':csrf},body:JSON.stringify({line})});const result=await r.json();el('connection').textContent=r.ok&&result.submitted?'已请求原软件回应\n出声取决于语音状态':r.status===429?'语音稍等一下喵～':result.error||'原软件语音暂不可用';}catch{el('connection').textContent='原软件语音未连接';}}
 
 let recordingActive=false, recordingState=null, recordQueue=Promise.resolve(), exiting=false;
+const lastStatusNotes=new Map();
+function noteStatus(kind,message){
+ if(!recordingActive||exiting||!message||lastStatusNotes.get(kind)===message)return;
+ lastStatusNotes.set(kind,message);
+ recordAction('note',{kind,message:message.slice(0,240)}).catch(()=>{});
+}
+for(const [id,kind] of [['agentStatus','agent'],['connection','connection']]){
+ new MutationObserver(()=>noteStatus(kind,el(id).textContent)).observe(el(id),{childList:true,characterData:true,subtree:true});
+}
 function renderRecording(d){
+ if(recordingActive&&!d.active){window.dispatchEvent(new Event('catfood:recordend'));native('recordEnd');document.body.classList.add('record-inactive');}
+ const newlyActive=!recordingActive&&!!d.active;
  recordingState=d;recordingActive=!!d.active;
+ if(newlyActive){lastStatusNotes.clear();document.body.classList.remove('record-finished');noteStatus('agent',el('agentStatus').textContent);noteStatus('connection',el('connection').textContent);}
  el('exitRecord').textContent=recordingActive?'和猫娘一起玩':'开始记录模式';
  el('recordCounts').textContent=d.error||`本次摸头 ${d.pet||0} · 询问 ${d.ask||0} ｜累计摸头 ${d.totals?.pet||0} · 询问 ${d.totals?.ask||0}`;
  el('historyTotals').textContent=`共 ${d.totals?.sessions||0} 段记录，摸头 ${d.totals?.pet||0} 次，询问 ${d.totals?.ask||0} 次喵～`;
  el('memoryStatus').textContent=d.pending_memory?`${d.pending_memory} 段已保存在本机，等待写入 YUI 记忆；后台会重试喵～`:'已完成记录的记忆写入均已确认喵～';
- el('historyRows').replaceChildren();for(const row of d.history||[]){const article=document.createElement('article');article.textContent=`${row.start}\n${row.active?'记录中':row.end||'已结束'}\n摸头 ${row.pet||0} 次 · 询问 ${row.ask||0} 次\n${row.active?'互动正在保存':row.memory_saved?'已写入 YUI 记忆':'本机已保存 · 记忆待同步'}`;el('historyRows').append(article);}
+ el('historyRows').replaceChildren();for(const row of d.history||[]){const article=document.createElement('article');const notes=(row.status_events||[]).map(item=>`${item.at} · ${item.kind==='agent'?'Agent 状态':'数据状态'}：${item.message}`).join('\n');article.textContent=`${row.start}\n${row.active?'记录中':row.end||'已结束'}\n摸头 ${row.pet||0} 次 · 询问 ${row.ask||0} 次\n${row.active?'互动正在保存':row.memory_saved?'已写入 YUI 记忆':'本机已保存 · 记忆待同步'}${notes?'\n'+notes:''}`;el('historyRows').append(article);}
 }
 function pendingClicks(){try{return JSON.parse(localStorage.getItem('catfood-pending-clicks')||'[]');}catch{return [];}}
 function savePending(items){localStorage.setItem('catfood-pending-clicks',JSON.stringify(items));}
@@ -64,34 +76,39 @@ async function sendRecord(body){
  try{const r=await fetch('/api/recording',{method:'POST',headers:{'Content-Type':'application/json','X-Neko-CSRF':csrf},body:JSON.stringify(body),signal:controller.signal});if(!r.ok)throw Error('记录未保存喵～');const d=await r.json();if(d.error)throw Error(d.error);renderRecording(d);return d;}finally{clearTimeout(timeout);}
 }
 async function flushClicks(){for(const item of pendingClicks()){await sendRecord(item);savePending(pendingClicks().filter(x=>x.event_id!==item.event_id));}}
-function recordAction(action){
- if(['pet','ask'].includes(action)){
+function recordAction(action,details={}){
+ if(['pet','ask','note'].includes(action)){
   if(!recordingActive||exiting)return Promise.resolve(null);
-  const item={action,event_id:crypto.randomUUID(),session_id:recordingState.id};savePending([...pendingClicks(),item]);
+  const item={action,event_id:crypto.randomUUID(),session_id:recordingState.id,...details};savePending([...pendingClicks(),item]);
  }
- const work=async()=>{await flushClicks();return ['pet','ask'].includes(action)?recordingState:sendRecord({action});};
+ const work=async()=>{await flushClicks();return ['pet','ask','note'].includes(action)?recordingState:sendRecord({action});};
  const result=recordQueue.then(work);recordQueue=result.catch(()=>{el('recordCounts').textContent='记录暂未同步，点击已暂存在本机，将自动重试喵～';});return result;
 }
 async function finishRecording(){
  if(exiting)return;exiting=true;el('exitRecord').disabled=true;
  // Restore the original immediately even when the loopback server is unavailable.
- native('recordEnd');document.body.classList.add('record-inactive');el('historyPanel').hidden=true;
+ window.dispatchEvent(new Event('catfood:recordend'));native('recordEnd');document.body.classList.add('record-inactive','record-finished');el('historyPanel').hidden=true;el('menu').hidden=true;
  try{const d=await recordAction('end');if(d?.summary){say(d.summary);clearTimeout(timer);el('connection').textContent=d.memory_saved?'已写入 YUI 记忆喵～':'互动已保存，记忆在后台同步喵～';}return d;}
  catch(e){say('已恢复 NEKO。\n记录仍待同步，请重试退出喵～');clearTimeout(timer);}
- finally{exiting=false;el('exitRecord').disabled=false;}
+ finally{exiting=false;el('exitRecord').disabled=false;setTimeout(()=>native('hide'),3200);}
 }
 let nativeTimer=null;
+function reportTakeover(d){
+ if(!csrf||!recordingState?.id)return;
+ fetch('/api/takeover',{method:'POST',headers:{'Content-Type':'application/json','X-Neko-CSRF':csrf},body:JSON.stringify({session_id:recordingState.id,ok:!!d.ok,reason:d.reason||null})}).catch(()=>{});
+}
 window.catfoodNativeState=d=>{
  clearTimeout(nativeTimer);
  if(!d.active||!recordingActive||exiting)return;
+ reportTakeover(d);
  if(d.ok){document.body.classList.remove('record-inactive');el('recordCounts').title=d.paused?'原模型已暂停，原程序窗口已隐藏':'原程序窗口已隐藏';}
- else{document.body.classList.add('record-inactive');native('recordEnd');recordAction('end').catch(()=>{});say('未能接管原版窗口。\n已保留正常模式喵～');clearTimeout(timer);el('connection').textContent='请确认辅助功能权限及原版人物控制可用';}
+ else{document.body.classList.add('record-inactive');native('recordEnd');recordAction('end').catch(()=>{});say(d.reason==='accessibility'?'请先在系统设置授予猫粮辅助功能权限，\n再重新打开挂件喵～':'未能接管原版窗口。\n已保留正常模式喵～');clearTimeout(timer);el('connection').textContent=d.reason==='accessibility'?'辅助功能权限不可用':'请确认原版人物控制可用';}
 };
 async function startRecording(){
  try{const d=await recordAction('start');if(!d?.active)return;
  document.body.classList.add('record-inactive');restore();
  if(!native('recordStart')){await recordAction('end');say('请从 NEKO 打开桌面挂件喵～');clearTimeout(timer);return;}
- nativeTimer=setTimeout(()=>window.catfoodNativeState({active:true,ok:false}),3000);
+ nativeTimer=setTimeout(()=>window.catfoodNativeState({active:true,ok:false}),10000);
  }catch(e){say(e.message);}
 }
 el('exitRecord').onclick=()=>{el('menu').hidden=true;return recordingActive?finishRecording():startRecording();};
@@ -99,5 +116,7 @@ el('historyToggle').onclick=()=>{el('historyPanel').hidden=false;recordAction('s
 async function retryMemory(){const d=await recordAction('retry');if(d)say(d.pending_memory?'互动已保存，正在重试记忆同步喵～':'已写入 YUI 的记忆喵～');}
 el('retryMemory').onclick=()=>{el('menu').hidden=true;retryMemory().catch(()=>{});};el('historyRetry').onclick=()=>retryMemory().catch(()=>{});
 document.body.classList.add('record-inactive');
-const beginRecording=setInterval(async()=>{if(!csrf)return;clearInterval(beginRecording);try{const d=await recordAction('status');if(d?.active){native('recordStart');nativeTimer=setTimeout(()=>window.catfoodNativeState({active:true,ok:false}),3000);}else if(!d?.initialized)await startRecording();else if(d.summary){say(d.summary);clearTimeout(timer);}}catch{}},200);
-let recordPollBusy=false;setInterval(async()=>{if(!csrf||exiting||recordPollBusy)return;recordPollBusy=true;try{await recordAction('status');}catch{}finally{recordPollBusy=false;}},5000);
+const beginRecording=setInterval(async()=>{if(!csrf)return;clearInterval(beginRecording);try{const d=await recordAction('status');if(d?.active){native('recordStart');nativeTimer=setTimeout(()=>window.catfoodNativeState({active:true,ok:false}),10000);}else if(!d?.initialized)await startRecording();}catch{}},200);
+let recordPollBusy=false;setInterval(async()=>{if(!csrf||exiting||recordPollBusy)return;recordPollBusy=true;try{const wasActive=recordingActive;const d=await recordAction('status');if(d?.active&&!wasActive){document.body.classList.add('record-inactive');if(native('recordStart'))nativeTimer=setTimeout(()=>window.catfoodNativeState({active:true,ok:false}),10000);else await recordAction('end');}}catch{}finally{recordPollBusy=false;}},5000);
+
+window.addEventListener('catfood:musicbeat',()=>{bounce('character');});

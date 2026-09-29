@@ -75,11 +75,15 @@ class Recording:
                 error=self.load_error,
             )
 
-    def action(self, action, event_id=None, session_id=None):
-        if action not in ("start", "pet", "ask", "end", "status", "retry"):
+    def action(self, action, event_id=None, session_id=None, kind=None, message=None):
+        if action not in ("start", "pet", "ask", "note", "end", "status", "retry"):
             raise ValueError("Unknown recording action")
         if event_id is not None and (not isinstance(event_id, str) or not 1 <= len(event_id) <= 100):
             raise ValueError("Invalid event id")
+        if action == "note" and (
+            kind not in ("agent", "connection") or not isinstance(message, str) or not 1 <= len(message) <= 240
+        ):
+            raise ValueError("Invalid status note")
         with self.lock:
             if self.load_error:
                 return self.snapshot()
@@ -100,6 +104,18 @@ class Recording:
                         if target.get("summary"):
                             target["summary"] = self.summary(target)
                             target["memory_saved"] = False
+            elif action == "note":
+                target = next((row for row in sessions if row["id"] == session_id), None) if session_id else current
+                if not target or not (target.get("active") or session_id):
+                    return self.snapshot()
+                seen = target.setdefault("events", [])
+                if not event_id or event_id not in seen:
+                    notes = target.setdefault("status_events", [])
+                    if not notes or notes[-1]["kind"] != kind or notes[-1]["message"] != message:
+                        notes.append({"at": now(), "kind": kind, "message": message})
+                        del notes[:-200]
+                    if event_id:
+                        seen.append(event_id)
             elif action == "end" and current and current.get("active"):
                 current.update(active=False, end=now(), memory_saved=False)
                 current["summary"] = self.summary(current)

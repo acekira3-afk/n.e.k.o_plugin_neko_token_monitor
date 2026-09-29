@@ -13,3 +13,19 @@
 
 /* Keep the menu trigger clear of YUI's ears. */
 #menuToggle{top:142px;right:2px}
+
+/* Operational statuses are kept in the interaction history, not around YUI. */
+#agentStatus,#connection{display:none}
+body.record-finished #recordBar,body.record-finished #menuToggle,body.record-finished #menu{display:none}
+
+/* Rhythm controls sit to the left of YUI; optional settings use a separate panel. */
+body.music-active #connection,body.music-active #agentStatus{visibility:hidden}
+#musicPanel{position:fixed;left:12px;top:208px;width:166px;z-index:35;border:1px solid #d8d5e5;border-radius:12px;background:#fffdf8;padding:8px;font-size:12px}
+#musicPanel[hidden],#musicSettingsPanel[hidden]{display:none}
+#musicPanel header,#musicSettingsPanel header{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
+#musicPanel button,#musicSettingsPanel button{border:0;border-radius:6px;background:#eeeaf7;padding:6px;font-size:11px}
+#musicPanel header button,#musicSettingsPanel header button{padding:0 7px;font-size:19px}
+.musicControls{display:flex;gap:5px}
+#musicStatus{margin:7px 0 0;font-size:11px;line-height:1.5}
+#musicSettingsPanel{position:fixed;inset:24px 20px auto;z-index:75;border:2px solid var(--ink);border-radius:14px;background:#fffdf8;padding:16px;font-size:13px;box-shadow:0 5px 20px #353b7322}
+#musicSettingsPanel>label{display:block;margin-top:12px}#musicSettingsPanel>input{width:100%;margin:8px 0}#musicSettingsPanel output{float:right;color:#85899f}#musicSettingsPanel p{font-size:11px;line-height:1.6;color:#85899f}
